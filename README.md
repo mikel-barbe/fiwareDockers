@@ -27,7 +27,7 @@ Stack **FIWARE** desplegado con **Docker Compose** para montar una plataforma Io
 
 ---
 
-## Puertos por defecto
+## 🔌 Puertos por defecto
 
 - Orion: `1026`
 - Wilma (PEP Proxy): `1027`
