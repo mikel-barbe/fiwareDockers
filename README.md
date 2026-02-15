@@ -1,11 +1,11 @@
-# FIWARE Dockers
+# FIWARE Dockers 🚢
 
 Stack **FIWARE** desplegado con **Docker Compose** para montar una plataforma IoT/Contexto completa: **Orion Context Broker** (con MongoDB), **Keyrock IdM** + **Wilma PEP Proxy** (seguridad OAuth2), **IoT Agent JSON**, **Cygnus NGSI** (persistencia) + **PostgreSQL**, y herramientas de soporte como **Grafana**, **pgAdmin** y **n8n**.
 
 > Este repositorio está pensado como base reproducible para pruebas, demos y aprendizaje.
 ---
 
-## Componentes incluidos
+## 🧩 Componentes incluidos
 
 - **MongoDB**: base de datos para Orion.
 - **Orion Context Broker**: núcleo NGSI (gestión de entidades/contexto).
