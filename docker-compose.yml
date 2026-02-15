@@ -1,0 +1,222 @@
+# -------------------------------------------------------------------------------------------------------------------
+# Author: Mikel Barberena Ruiz
+# GitHub: https://github.com/mikel-barbe
+
+services:
+  mongo:
+    container_name: mongo
+    image: mongo:4.4
+    ports:
+      - "27017:27017"
+    volumes:
+     -  ./mongodb:/data/db
+
+  orion:
+    container_name: orion
+    image: fiware/orion
+    depends_on:
+      - mongo
+    ports:
+      - "1026:1026"
+    expose:
+      - "1026"
+    command: -dbURI mongodb://mongo:27017 -logLevel INFO
+
+
+  keyrock:
+    image: fiware/idm:7.8.1
+    container_name: fiware-keyrock
+    hostname: keyrock
+    depends_on:
+      - mysql-db
+    ports:
+      - "3000:3000"
+      - "443:443"
+    environment:
+      - DEBUG=idm:*
+      - IDM_DB_HOST=mysql-db #Nombre del servicio
+      - IDM_DB_USER=fiware #Tiene que ser el mismo que MYSQL_USER
+      - IDM_DB_PASS= #Tiene que ser el mismo que MYSQL_PASSWORD
+      - IDM_DB_NAME=idm #Tiene que ser el mismo que MYSQL_DATABASE 
+      - IDM_DB_DIALECT=mysql
+      - IDM_DB_PORT=3306 #Puerto interno de el contenedor MySQL
+      - IDM_DB_SEED=true
+      - IDM_DB_MIGRATE=true
+      - IDM_ADMIN_USER=admin #Usuario Keyrock, pon el de tu preferencia
+      - IDM_ADMIN_EMAIL=admin@example.com
+      - IDM_ADMIN_PASS= change-me-keyrock-admin # Contraseña del usuario administrador
+      # Variables OAuth2 necesarias
+      - IDM_OAUTH2_ENABLED=true
+      - IDM_OAUTH2_ISSUER=http://localhost:3000 #URL con la que se accedera a Keyrock
+      - IDM_TOKEN_VALIDITY=3600 #Validez del token de acceso en segundos
+      - IDM_OAUTH2_REQUIRED=true
+      - IDM_PDP_ENABLED=false
+      - IDM_AUTHZFORCE_ENABLED=false
+
+  mysql-db:
+    restart: always
+    image: mysql:5.7
+    hostname: mysql-db
+    container_name: db-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD= #Contraseña del usuario root
+      - MYSQL_ROOT_HOST=% #Admitir direcciones de cualquier direccion IP
+      - MYSQL_USER=fiware #Puedes poner el usuario que quieras
+      - MYSQL_PASSWORD= #Contraseña del usuario "fiware". Debe coincidir con IDM_DB_PASS
+      - MYSQL_DATABASE=idm #Nombre de la bbdd. Puedes poner la que quieras
+    command: --character-set-server=utf8 --collation-server=utf8_general_ci
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+
+
+  # PEP Proxy (Wilma) delante de Orion
+  orion-proxy:
+    container_name: orion-proxy
+    image: fiware/pep-proxy
+    hostname: orion-proxy
+    depends_on:
+      - keyrock
+      - orion
+    ports:
+      - "1027:1027"
+    healthcheck:
+      disable: true
+    environment:
+      - DEBUG=pep-proxy:*
+      - PEP_PROXY_DEBUG=true
+      # Servicio protegido (Orion)
+      - PEP_PROXY_APP_HOST=orion
+      - PEP_PROXY_APP_PORT=1026
+      - PEP_PROXY_PORT=1027 # Puerto donde escucha el PEP
+      # Conexion a keyrock desde Wilma (interno docker)
+      - PEP_PROXY_IDM_HOST=keyrock 
+      - PEP_PROXY_IDM_PORT=3000          # Tu Keyrock está en 3000
+      - PEP_PROXY_IDM_SSL_ENABLED=false
+      # HTTPS desactivado en el PEP (solo HTTP)
+      - PEP_PROXY_HTTPS_ENABLED=false
+      # Activar protección
+      - PEP_PROXY_AUTH_ENABLED=true
+      - PEP_PROXY_PDP=idm
+      # Credenciales del PEP tal cual en Keyrock:
+      - "PEP_PROXY_APP_ID= ....... " #Aqui deberas poner el APP ID accediendo a tu panel de Keyrock
+      - "PEP_PROXY_USERNAME= ...... " #Username del PEP
+      - "PEP_PASSWORD= ....... " #Password del PEP
+      # Secreto opcional para tokens JWT locales
+      - "PEP_PROXY_TOKEN_SECRET= ........ "
+
+  cygnus:
+    container_name: cygnus
+    image: fiware/cygnus-ngsi
+    depends_on:
+      - postgres
+    ports:
+      - "5080:5080"
+      - "5055:5055"
+    environment:
+      - CYGNUS_SKIP_CONF_GENERATION=false
+      - CYGNUS_POSTGRESQL_HOST=postgres
+      - CYGNUS_POSTGRESQL_PORT=5432
+      - CYGNUS_POSTGRESQL_USER=admin #Tiene que coincidir con POSTGRES_USER
+      - CYGNUS_POSTGRESQL_PASS= ...... #Tiene que coincidir con POSTGRES_PASSWORD
+      - CYGNUS_POSTGRESQL_ENABLE_CACHE=true
+      - CYGNUS_POSTGRESQL_SERVICE_PORT=5055
+      - CYGNUS_SERVICE_PORT=5055 #Puerto del contenedor Cyngus
+      - CYGNUS_API_PORT=5080 #Puerto del contenedor Cyngus
+      - CYGNUS_POSTGRESQL_DATABASE=cygnusdb #Tiene que coincidir con POSTGRES_DB
+      - CYGNUS_POSTGRESQL_ATTR_NATIVE_TYPES=true
+      - CYGNUS_LOG_LEVEL=INFO
+      - CYGNUS_ENABLE_ENCODING=true
+      - CYGNUS_POSTGRESQL_DATA_MODEL=dm-by-entity-type
+      - CYGNUS_POSTGRESQL_ATTR_PERSISTENCE=column
+
+  postgres:
+    container_name: postgres
+    image: postgres:15
+    #image: timescale/timescaledb:latest-pg15
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=admin #Lo eliges tu
+      - POSTGRES_PASSWORD= ....... #Lo eliges tu. Debe coincidir con CYGNUS_POSTGRESQL_PASS
+      - POSTGRES_DB=cygnusdb #Base de datos que utilizara Cygnus.Puedes modificarla
+    volumes:
+      - ./var/lib/postgresql/data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    restart: always
+    environment: #Credenciales para entrar en el panel de pgAdmin (las eliges tú)
+      PGADMIN_DEFAULT_EMAIL: ............
+      PGADMIN_DEFAULT_PASSWORD: ..........
+    ports:
+      - "88:80"
+    depends_on:
+      - postgres
+    user: "0"
+    volumes:
+      - ./var/lib/pgadmin:/var/lib/pgadmin
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    depends_on:
+      - postgres
+    ports:
+      - '3003:3000'
+    environment: #Credenciales iniciales admin (las eliges tú)
+      - GF_SECURITY_ADMIN_USER= .........
+      - GF_SECURITY_ADMIN_PASSWORD= .........
+
+    volumes:
+      - grafana-storage:/var/lib/grafana
+
+  iot-agent:
+    container_name: iot-agent
+    image: fiware/iotagent-json
+    depends_on:
+      - mongo
+      - orion
+    ports:
+      - "4041:4041"
+      - "7896:7896"
+    environment:
+      - IOTA_CB_HOST=orion
+      - IOTA_CB_PORT=1026
+      - IOTA_NORTH_PORT=4041
+      - IOTA_SOUTH_PORT=7896
+      - IOTA_MONGO_HOST=mongo
+      - IOTA_LOG_LEVEL=DEBUG
+      - IOTA_TIMESTAMP=false
+      - IOTA_AUTOCAST=true
+      - IOTA_REGISTRY_TYPE=mongodb
+      - IOTA_MQTT_DISABLED=true
+      - IOTA_AMQP_DISABLED=true
+      - IOTA_HTTP_DISABLED=false
+      - IOTA_EXPLICIT_ATTRS=false
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: always
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - TZ=Europe/Madrid
+      - N8N_PROTOCOL=http
+      - N8N_PORT=5678
+
+      - N8N_HOST= localhost
+      - N8N_EDITOR_BASE_URL= http://localhost:5678
+      - WEBHOOK_URL= http://localhost:5678
+
+      # Proteger panel con basic Basic Auth
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER= ........ #Usuario admin
+      - N8N_BASIC_AUTH_PASSWORD=...... #Contraseña admin
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+
+volumes:
+  grafana-storage:
